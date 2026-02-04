@@ -1,4 +1,4 @@
-const CACHE_NAME = 'juggle-records-v3';
+const CACHE_NAME = 'juggle-records-v4';
 const ASSETS = ['/', '/index.html', '/style.css', '/app.js'];
 
 self.addEventListener('install', (e) => {

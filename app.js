@@ -1,4 +1,4 @@
-const JSONBIN_API = 'https://jsonbin-zeta.vercel.app/api/bins';
+const JSONBIN_API = '/api/bins';
 const BIN_ID_KEY = 'juggle-bin-id';
 
 const state = {
