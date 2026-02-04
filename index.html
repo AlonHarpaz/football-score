@@ -13,6 +13,7 @@
 <body>
   <header>
     <h1>Juggle Records</h1>
+    <button class="btn-share" id="btnShare">Share</button>
   </header>
 
   <nav class="tabs" role="tablist">
@@ -35,11 +36,6 @@
       </div>
       <form id="recordForm">
         <div class="form-group">
-          <label for="playerName">Player</label>
-          <input type="text" id="playerName" list="playerList" placeholder="Name" required autocomplete="off">
-          <datalist id="playerList"></datalist>
-        </div>
-        <div class="form-group">
           <label for="category">Category</label>
           <select id="category">
             <option value="volley">Volley</option>
@@ -50,23 +46,8 @@
           <label for="count">Count (touches)</label>
           <input type="number" id="count" min="1" placeholder="0" required>
         </div>
-        <div class="form-group">
-          <label for="duration">Time (seconds)</label>
-          <input type="number" id="duration" min="1" step="1" placeholder="0" required>
-        </div>
         <button type="submit" class="btn-submit">Save Record</button>
       </form>
-    </div>
-  </div>
-
-  <!-- Player History Modal -->
-  <div class="modal-overlay" id="historyOverlay">
-    <div class="modal">
-      <div class="modal-header">
-        <h2 id="historyTitle">Player History</h2>
-        <button class="modal-close" id="historyClose">&times;</button>
-      </div>
-      <div id="historyContent"></div>
     </div>
   </div>
 

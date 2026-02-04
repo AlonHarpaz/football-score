@@ -1,63 +1,83 @@
-const STORAGE_KEY = 'juggle-records';
+const JSONBIN_API = 'https://jsonbin-zeta.vercel.app/api/bins';
+const BIN_ID_KEY = 'juggle-bin-id';
 
 const state = {
   activeCategory: 'volley',
-  records: loadRecords(),
+  records: [],
+  binId: null,
 };
 
-function loadRecords() {
+// --- Remote storage (JSONBin) ---
+
+async function initBin() {
+  // Check URL hash first (shared link), then localStorage
+  const hashId = window.location.hash.slice(1);
+  const storedId = localStorage.getItem(BIN_ID_KEY);
+  const binId = hashId || storedId;
+
+  if (binId) {
+    state.binId = binId;
+    localStorage.setItem(BIN_ID_KEY, binId);
+    window.location.hash = binId;
+    await fetchRecords();
+  } else {
+    await createBin();
+  }
+
+  renderLeaderboard();
+}
+
+async function createBin() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+    const res = await fetch(JSONBIN_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ records: [] }),
+    });
+    const data = await res.json();
+    state.binId = data.id;
+    localStorage.setItem(BIN_ID_KEY, data.id);
+    window.location.hash = data.id;
   } catch {
-    return [];
+    // Fallback to local-only if network fails
   }
 }
 
-function saveRecords() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records));
+async function fetchRecords() {
+  if (!state.binId) return;
+  try {
+    const res = await fetch(JSONBIN_API + '/' + state.binId);
+    const data = await res.json();
+    state.records = (data.data && data.data.records) || [];
+  } catch {
+    // Use whatever is in state
+  }
 }
+
+async function saveRecords() {
+  if (!state.binId) return;
+  try {
+    await fetch(JSONBIN_API + '/' + state.binId, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ records: state.records }),
+    });
+  } catch {
+    // Silent fail -- data is still in state for this session
+  }
+}
+
+// --- Helpers ---
 
 function formatDate(iso) {
   const d = new Date(iso);
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function formatTime(seconds) {
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return s > 0 ? `${m}m ${s}s` : `${m}m`;
-}
-
-function getPersonalBests(category) {
-  const categoryRecords = state.records.filter((r) => r.category === category);
-  const byPlayer = {};
-
-  for (const record of categoryRecords) {
-    const name = record.player.toLowerCase();
-    if (!byPlayer[name] || record.count > byPlayer[name].count) {
-      byPlayer[name] = record;
-    }
-  }
-
-  return Object.values(byPlayer).sort((a, b) => {
-    if (b.count !== a.count) return b.count - a.count;
-    return b.duration - a.duration;
-  });
-}
-
-function getPlayerHistory(player, category) {
+function getRecordsByCategory(category) {
   return state.records
-    .filter((r) => r.player.toLowerCase() === player.toLowerCase() && r.category === category)
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-}
-
-function getUniquePlayers() {
-  const names = new Set();
-  for (const r of state.records) {
-    names.add(r.player);
-  }
-  return [...names];
+    .filter((r) => r.category === category)
+    .sort((a, b) => b.count - a.count);
 }
 
 // --- DOM helpers ---
@@ -95,9 +115,9 @@ function renderLeaderboard() {
   const container = document.getElementById('leaderboard');
   container.replaceChildren();
 
-  const bests = getPersonalBests(state.activeCategory);
+  const records = getRecordsByCategory(state.activeCategory);
 
-  if (bests.length === 0) {
+  if (records.length === 0) {
     container.appendChild(
       el('div', { className: 'empty-state' },
         el('div', { className: 'icon' }, '\u26BD'),
@@ -107,40 +127,21 @@ function renderLeaderboard() {
     return;
   }
 
-  for (let i = 0; i < bests.length; i++) {
-    const record = bests[i];
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
     const rank = i + 1;
     const rankClass = rank <= 3 ? `record-card rank-${rank}` : 'record-card';
 
-    const card = el('div', { className: rankClass, 'data-player': record.player, 'data-category': record.category },
+    const card = el('div', { className: rankClass, 'data-id': record.id },
       el('div', { className: 'rank' }, rank <= 3 ? RANK_MEDALS[rank - 1] : String(rank)),
       el('div', { className: 'record-info' },
-        el('div', { className: 'player-name' }, record.player),
+        el('div', { className: 'player-name' }, String(record.count) + ' touches'),
         el('div', { className: 'record-date' }, formatDate(record.date))
       ),
-      el('div', { className: 'record-stats' },
-        el('div', { className: 'stat' },
-          el('span', { className: 'stat-value' }, String(record.count)),
-          el('span', { className: 'stat-label' }, 'touches')
-        ),
-        el('div', { className: 'stat' },
-          el('span', { className: 'stat-value' }, formatTime(record.duration)),
-          el('span', { className: 'stat-label' }, 'time')
-        )
-      )
+      el('button', { className: 'btn-delete', 'data-id': record.id, title: 'Delete' }, '\u00D7')
     );
 
     container.appendChild(card);
-  }
-}
-
-function renderPlayerList() {
-  const datalist = document.getElementById('playerList');
-  datalist.replaceChildren();
-  for (const name of getUniquePlayers()) {
-    const option = document.createElement('option');
-    option.value = name;
-    datalist.appendChild(option);
   }
 }
 
@@ -162,9 +163,8 @@ const categorySelect = document.getElementById('category');
 
 document.getElementById('btnAddRecord').addEventListener('click', () => {
   categorySelect.value = state.activeCategory;
-  renderPlayerList();
   modalOverlay.classList.add('open');
-  document.getElementById('playerName').focus();
+  document.getElementById('count').focus();
 });
 
 document.getElementById('modalClose').addEventListener('click', closeModal);
@@ -177,132 +177,60 @@ function closeModal() {
   document.getElementById('recordForm').reset();
 }
 
-document.getElementById('recordForm').addEventListener('submit', (e) => {
+document.getElementById('recordForm').addEventListener('submit', async (e) => {
   e.preventDefault();
 
-  const player = document.getElementById('playerName').value.trim();
   const category = categorySelect.value;
   const count = parseInt(document.getElementById('count').value, 10);
-  const duration = parseInt(document.getElementById('duration').value, 10);
 
-  if (!player || !count || !duration) return;
+  if (!count) return;
 
   state.records.push({
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    player,
     category,
     count,
-    duration,
     date: new Date().toISOString(),
   });
 
-  saveRecords();
-  state.activeCategory = category;
-
   document.querySelector('.tab.active').classList.remove('active');
   document.querySelector(`[data-category="${category}"]`).classList.add('active');
+  state.activeCategory = category;
 
   renderLeaderboard();
   closeModal();
+  await saveRecords();
 });
 
-// --- Player History Modal ---
+// --- Delete ---
 
-const historyOverlay = document.getElementById('historyOverlay');
-
-document.getElementById('leaderboard').addEventListener('click', (e) => {
-  const card = e.target.closest('.record-card');
-  if (!card) return;
-
-  const player = card.dataset.player;
-  const category = card.dataset.category;
-  showHistory(player, category);
-});
-
-document.getElementById('historyClose').addEventListener('click', closeHistory);
-historyOverlay.addEventListener('click', (e) => {
-  if (e.target === historyOverlay) closeHistory();
-});
-
-function closeHistory() {
-  historyOverlay.classList.remove('open');
-}
-
-function showHistory(player, category) {
-  const history = getPlayerHistory(player, category);
-  const best = history.reduce((top, r) => (r.count > top.count ? r : top), history[0]);
-
-  document.getElementById('historyTitle').textContent = `${player} - ${capitalize(category)}`;
-
-  const content = document.getElementById('historyContent');
-  content.replaceChildren();
-
-  const list = el('div', { className: 'history-list' });
-
-  for (const r of history) {
-    const isBest = r.id === best.id;
-
-    const infoDiv = el('div', null,
-      el('div', { className: 'history-date' }, formatDate(r.date)),
-      isBest ? el('div', { className: 'record-badge' }, 'Personal Best') : null
-    );
-
-    const statsDiv = el('div', { className: 'history-stats' },
-      el('div', null,
-        el('div', { className: 'history-value' }, String(r.count)),
-        el('div', { className: 'history-label' }, 'touches')
-      ),
-      el('div', null,
-        el('div', { className: 'history-value' }, formatTime(r.duration)),
-        el('div', { className: 'history-label' }, 'time')
-      )
-    );
-
-    const deleteBtn = el('button', { className: 'btn-delete', 'data-id': r.id, title: 'Delete' }, '\u00D7');
-
-    const item = el('div', { className: isBest ? 'history-item is-record' : 'history-item' },
-      infoDiv, statsDiv, deleteBtn
-    );
-
-    list.appendChild(item);
-  }
-
-  content.appendChild(list);
-  historyOverlay.classList.add('open');
-}
-
-document.getElementById('historyContent').addEventListener('click', (e) => {
+document.getElementById('leaderboard').addEventListener('click', async (e) => {
   const btn = e.target.closest('.btn-delete');
   if (!btn) return;
 
   const id = btn.dataset.id;
   state.records = state.records.filter((r) => r.id !== id);
-  saveRecords();
   renderLeaderboard();
+  await saveRecords();
+});
 
-  const remaining = state.records.filter(
-    (r) => r.category === state.activeCategory
-  );
-  if (remaining.length === 0) {
-    closeHistory();
-  } else {
-    const item = btn.closest('.history-item');
-    if (item) {
-      item.style.opacity = '0';
-      item.style.transform = 'translateX(100%)';
-      item.style.transition = 'all 0.25s';
-      setTimeout(() => item.remove(), 250);
-    }
+// --- Share button ---
+
+document.getElementById('btnShare').addEventListener('click', () => {
+  const url = window.location.href;
+  if (navigator.share) {
+    navigator.share({ title: 'Juggle Records', url });
+  } else if (navigator.clipboard) {
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = document.getElementById('btnShare');
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'Share'; }, 1500);
+    });
   }
 });
 
-function capitalize(str) {
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
 // --- Init ---
 
-renderLeaderboard();
+initBin();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js');
