@@ -48,7 +48,7 @@ async function fetchRecords() {
   try {
     const res = await fetch(JSONBIN_API + '/' + state.binId);
     const data = await res.json();
-    state.records = (data.data && data.data.records) || [];
+    state.records = data.records || [];
   } catch {
     // Use whatever is in state
   }
