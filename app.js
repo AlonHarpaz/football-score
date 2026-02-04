@@ -1,7 +1,7 @@
 const STORAGE_KEY = 'juggle-records';
 
 const state = {
-  activeCategory: 'unbounce',
+  activeCategory: 'volley',
   records: loadRecords(),
 };
 
